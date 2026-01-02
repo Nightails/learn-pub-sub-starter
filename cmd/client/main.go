@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -25,6 +23,7 @@ func main() {
 		return
 	}
 
+	// declare 'pause' queue
 	exchange := routing.ExchangePerilDirect
 	queueName := routing.PauseKey + "." + username
 	routingKey := routing.PauseKey
@@ -35,9 +34,37 @@ func main() {
 	}
 	defer ch.Close()
 
-	// wait for ctrl+c
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
+	state := gamelogic.NewGameState(username)
+infiniteLoop:
+	for {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
+		switch words[0] {
+		case "spawn":
+			if err := state.CommandSpawn(words); err != nil {
+				fmt.Println(err)
+			}
+		case "move":
+			if _, err := state.CommandMove(words); err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Moved successfully!")
+			}
+		case "status":
+			state.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			fmt.Println("Quitting...")
+			break infiniteLoop
+		default:
+			fmt.Println("Unknown command")
+		}
+	}
+
 	fmt.Println("Shutting down and closing connection...")
 }
