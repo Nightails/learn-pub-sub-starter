@@ -12,13 +12,25 @@ import (
 func main() {
 	fmt.Println("Starting Peril server...")
 
+	// connect to RabbitMQ
 	url := "amqp://guest:guest@localhost:5672/"
 	conn, _ := amqp.Dial(url)
 	defer conn.Close()
 	fmt.Println("Successfully connected to the server")
 
-	ch, _ := conn.Channel()
+	// declare and bind 'game_log' queue
+	ch, _, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		"game_logs.*",
+		pubsub.Durable,
+	)
 	defer ch.Close()
+	if err != nil {
+		fmt.Println("Error binding queue:", err)
+		return
+	}
 
 	gamelogic.PrintServerHelp()
 infiniteLoop:
