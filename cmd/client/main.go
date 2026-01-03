@@ -34,7 +34,20 @@ func main() {
 	}
 	defer ch.Close()
 
-	state := gamelogic.NewGameState(username)
+	gs := gamelogic.NewGameState(username)
+
+	if err := pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		"pause."+username,
+		routing.PauseKey,
+		pubsub.Transient,
+		handlerPause(gs),
+	); err != nil {
+		fmt.Println("Failed to subscribe to pause queue:", err)
+		return
+	}
+
 infiniteLoop:
 	for {
 		words := gamelogic.GetInput()
@@ -43,17 +56,17 @@ infiniteLoop:
 		}
 		switch words[0] {
 		case "spawn":
-			if err := state.CommandSpawn(words); err != nil {
+			if err := gs.CommandSpawn(words); err != nil {
 				fmt.Println(err)
 			}
 		case "move":
-			if _, err := state.CommandMove(words); err != nil {
+			if _, err := gs.CommandMove(words); err != nil {
 				fmt.Println(err)
 			} else {
 				fmt.Println("Moved successfully!")
 			}
 		case "status":
-			state.CommandStatus()
+			gs.CommandStatus()
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
@@ -67,4 +80,11 @@ infiniteLoop:
 	}
 
 	fmt.Println("Shutting down and closing connection...")
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
 }
