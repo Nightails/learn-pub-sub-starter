@@ -25,7 +25,7 @@ func main() {
 		return
 	}
 
-	moveCh, _, err := pubsub.DeclareAndBind(
+	ch, _, err := pubsub.DeclareAndBind(
 		conn,
 		routing.ExchangePerilTopic,
 		"army_moves."+username,
@@ -36,44 +36,47 @@ func main() {
 		fmt.Println("Failed to declare and bind army_moves queue:", err)
 		return
 	}
-	defer moveCh.Close()
+	defer ch.Close()
 
 	gs := gamelogic.NewGameState(username)
 
 	// subscribe to 'pause' queue
-	if err := pubsub.SubscribeJSON(
+	if err := pubsub.Subscribe(
 		conn,
 		routing.ExchangePerilDirect,
 		"pause."+username,
 		routing.PauseKey,
 		pubsub.Transient,
 		handlerPause(gs),
+		pubsub.UnmarshalJSON,
 	); err != nil {
 		fmt.Println("Failed to subscribe to pause queue:", err)
 		return
 	}
 
 	// subscribe to 'army_moves' queue
-	if err := pubsub.SubscribeJSON(
+	if err := pubsub.Subscribe(
 		conn,
 		routing.ExchangePerilTopic,
 		"army_moves."+username,
 		routing.ArmyMovesPrefix+".*",
 		pubsub.Transient,
-		handlerArmyMove(moveCh, gs),
+		handlerArmyMove(ch, gs),
+		pubsub.UnmarshalJSON,
 	); err != nil {
 		fmt.Println("Failed to subscribe to army_moves queue:", err)
 		return
 	}
 
 	// subscribe to 'war_recognitions' queue
-	if err := pubsub.SubscribeJSON(
+	if err := pubsub.Subscribe(
 		conn,
 		routing.ExchangePerilTopic,
 		"war",
 		routing.WarRecognitionsPrefix+".*",
 		pubsub.Durable,
-		handlerWar(moveCh, gs),
+		handlerWar(ch, gs),
+		pubsub.UnmarshalJSON,
 	); err != nil {
 		fmt.Println("Failed to subscribe to war_recognitions queue:", err)
 		return
@@ -98,7 +101,7 @@ infiniteLoop:
 				fmt.Println("Moved successfully!")
 			}
 			if err := pubsub.PublishJSON(
-				moveCh,
+				ch,
 				routing.ExchangePerilTopic,
 				routing.ArmyMovesPrefix+"."+username,
 				move,
