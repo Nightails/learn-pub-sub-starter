@@ -56,26 +56,20 @@ func SubscribeJSON[T any](
 			acktype := handler(value)
 			switch acktype {
 			case Ack:
-				log.Println("Acknowledged message")
 				if err := m.Ack(true); err != nil {
 					log.Fatalf("Failed to ack message: %v", err)
 					return
 				}
-				log.Println("Message acknowledged")
 			case NackRequeue:
-				log.Println("Nacking message, requeueing")
 				if err := m.Nack(false, true); err != nil {
 					log.Fatalf("Failed to nack message: %v", err)
 					return
 				}
-				log.Println("Message nacked, requeued")
 			case NackDiscard:
-				log.Println("Nacking message, discarding")
 				if err := m.Nack(true, false); err != nil {
 					log.Fatalf("Failed to nack message: %v", err)
 					return
 				}
-				log.Println("Message nacked, discarded")
 			}
 		}
 	}()
