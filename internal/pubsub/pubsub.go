@@ -24,11 +24,19 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, value T) error {
 	return nil
 }
 
+type AckType string
+
+const (
+	Ack         AckType = "ack"
+	NackRequeue AckType = "nack_requeue"
+	NackDiscard AckType = "nack_discard"
+)
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange, queueName, key string,
 	queueType SimpleQueueType,
-	handler func(T)) error {
+	handler func(T) AckType) error {
 	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -45,10 +53,29 @@ func SubscribeJSON[T any](
 			if err := json.Unmarshal(m.Body, &value); err != nil {
 				continue
 			}
-			handler(value)
-			if err := m.Ack(false); err != nil {
-				log.Fatalf("Failed to ack message: %v", err)
-				return
+			acktype := handler(value)
+			switch acktype {
+			case Ack:
+				log.Println("Acknowledged message")
+				if err := m.Ack(true); err != nil {
+					log.Fatalf("Failed to ack message: %v", err)
+					return
+				}
+				log.Println("Message acknowledged")
+			case NackRequeue:
+				log.Println("Nacking message, requeueing")
+				if err := m.Nack(false, true); err != nil {
+					log.Fatalf("Failed to nack message: %v", err)
+					return
+				}
+				log.Println("Message nacked, requeued")
+			case NackDiscard:
+				log.Println("Nacking message, discarding")
+				if err := m.Nack(true, false); err != nil {
+					log.Fatalf("Failed to nack message: %v", err)
+					return
+				}
+				log.Println("Message nacked, discarded")
 			}
 		}
 	}()
