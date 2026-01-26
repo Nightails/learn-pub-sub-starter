@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -25,7 +26,7 @@ func main() {
 		return
 	}
 
-	ch, _, err := pubsub.DeclareAndBind(
+	moveChannel, _, err := pubsub.DeclareAndBind(
 		conn,
 		routing.ExchangePerilTopic,
 		"army_moves."+username,
@@ -36,7 +37,20 @@ func main() {
 		fmt.Println("Failed to declare and bind army_moves queue:", err)
 		return
 	}
-	defer ch.Close()
+	defer moveChannel.Close()
+
+	gameLogChannel, _, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		"game_logs",
+		routing.GameLogSlug+"."+username,
+		pubsub.Durable,
+	)
+	if err != nil {
+		fmt.Println("Failed to declare and bind game_logs queue:", err)
+		return
+	}
+	defer gameLogChannel.Close()
 
 	gs := gamelogic.NewGameState(username)
 
@@ -61,7 +75,7 @@ func main() {
 		"army_moves."+username,
 		routing.ArmyMovesPrefix+".*",
 		pubsub.Transient,
-		handlerArmyMove(ch, gs),
+		handlerArmyMove(moveChannel, gs),
 		pubsub.UnmarshalJSON,
 	); err != nil {
 		fmt.Println("Failed to subscribe to army_moves queue:", err)
@@ -75,7 +89,7 @@ func main() {
 		"war",
 		routing.WarRecognitionsPrefix+".*",
 		pubsub.Durable,
-		handlerWar(ch, gs),
+		handlerWar(moveChannel, gs),
 		pubsub.UnmarshalJSON,
 	); err != nil {
 		fmt.Println("Failed to subscribe to war_recognitions queue:", err)
@@ -101,7 +115,7 @@ infiniteLoop:
 				fmt.Println("Moved successfully!")
 			}
 			if err := pubsub.PublishJSON(
-				ch,
+				moveChannel,
 				routing.ExchangePerilTopic,
 				routing.ArmyMovesPrefix+"."+username,
 				move,
@@ -115,7 +129,27 @@ infiniteLoop:
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(words) < 2 {
+				fmt.Println("Usage: spam <number of messages>")
+				continue
+			}
+			n, err := strconv.Atoi(words[1])
+			if err != nil {
+				fmt.Println("Invalid number of messages:", err)
+				continue
+			}
+			for i := 0; i < n; i++ {
+				msg := gamelogic.GetMaliciousLog()
+				if err := pubsub.PublishGob(
+					gameLogChannel,
+					routing.ExchangePerilTopic,
+					routing.GameLogSlug+"."+username,
+					msg,
+				); err != nil {
+					fmt.Println("Failed to publish spam message:", err)
+					break
+				}
+			}
 		case "quit":
 			fmt.Println("Quitting...")
 			break infiniteLoop

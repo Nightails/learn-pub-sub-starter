@@ -22,8 +22,8 @@ func main() {
 	ch, _, err := pubsub.DeclareAndBind(
 		conn,
 		routing.ExchangePerilTopic,
-		routing.GameLogSlug,
-		"game_logs.*",
+		"game_logs",
+		routing.GameLogSlug+".*",
 		pubsub.Durable,
 	)
 	defer ch.Close()
