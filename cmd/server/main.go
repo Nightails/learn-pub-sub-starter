@@ -32,6 +32,19 @@ func main() {
 		return
 	}
 
+	if err := pubsub.Subscribe(
+		conn,
+		routing.ExchangePerilTopic,
+		"game_logs",
+		routing.GameLogSlug+".*",
+		pubsub.Durable,
+		handlerGameLog(),
+		pubsub.UnmarshalGob,
+	); err != nil {
+		fmt.Println("Failed to subscribe to game_logs queue:", err)
+		return
+	}
+
 	gamelogic.PrintServerHelp()
 infiniteLoop:
 	for {
@@ -63,4 +76,14 @@ infiniteLoop:
 	}
 
 	fmt.Println("Shutting down and closing connection...")
+}
+
+func handlerGameLog() func(routing.GameLog) pubsub.AckType {
+	return func(gl routing.GameLog) pubsub.AckType {
+		defer fmt.Println("> ")
+		if err := gamelogic.WriteLog(gl); err != nil {
+			fmt.Println("Failed to write log to disk:", err)
+		}
+		return pubsub.Ack
+	}
 }
