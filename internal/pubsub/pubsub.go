@@ -1,37 +1,10 @@
 package pubsub
 
 import (
-	"bytes"
-	"context"
-	"encoding/gob"
-	"encoding/json"
 	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-func PublishJSON[T any](ch *amqp.Channel, exchange, key string, value T) error {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
-	if err := ch.PublishWithContext(
-		context.Background(),
-		exchange,
-		key,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        data,
-		},
-	); err != nil {
-		return err
-	}
-
-	return nil
-}
 
 type AckType string
 
@@ -41,11 +14,13 @@ const (
 	NackDiscard AckType = "nack_discard"
 )
 
-func SubscribeJSON[T any](
+func Subscribe[T any](
 	conn *amqp.Connection,
 	exchange, queueName, key string,
 	queueType SimpleQueueType,
-	handler func(T) AckType) error {
+	handler func(T) AckType,
+	unmarshal func([]byte) (T, error),
+) error {
 	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -58,8 +33,8 @@ func SubscribeJSON[T any](
 	go func() {
 		defer ch.Close()
 		for m := range msg {
-			var value T
-			if err := json.Unmarshal(m.Body, &value); err != nil {
+			value, err := unmarshal(m.Body)
+			if err != nil {
 				continue
 			}
 			acktype := handler(value)
@@ -120,32 +95,4 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, err
 	}
 	return ch, q, nil
-}
-
-func PublishGob[T any](
-	ch *amqp.Channel,
-	exchange,
-	key string,
-	value T,
-) error {
-	buffer := new(bytes.Buffer)
-	if err := gob.NewEncoder(buffer).Encode(value); err != nil {
-		return err
-	}
-
-	if err := ch.PublishWithContext(
-		context.Background(),
-		exchange,
-		key,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/gob",
-			Body:        buffer.Bytes(),
-		},
-	); err != nil {
-		return err
-	}
-
-	return nil
 }
