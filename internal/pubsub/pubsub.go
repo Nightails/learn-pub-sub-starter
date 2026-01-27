@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"fmt"
 	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -26,37 +27,48 @@ func Subscribe[T any](
 		return err
 	}
 
-	msg, err := ch.Consume(q.Name, "", false, false, false, false, nil)
-	if err != nil {
+	if err := ch.Qos(10, 0, false); err != nil {
 		return err
 	}
-	go func() {
-		defer ch.Close()
-		for m := range msg {
-			value, err := unmarshal(m.Body)
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("could not consume messages: %v", err)
+	}
+	go func(subChan *amqp.Channel, msgsChan <-chan amqp.Delivery) {
+		defer subChan.Close()
+		for msg := range msgsChan {
+			value, err := unmarshal(msg.Body)
 			if err != nil {
+				if err := msg.Nack(false, false); err != nil {
+					log.Fatalf("Failed to nack message: %v", err)
+				}
 				continue
 			}
 			acktype := handler(value)
 			switch acktype {
 			case Ack:
-				if err := m.Ack(true); err != nil {
+				if err := msg.Ack(false); err != nil {
 					log.Fatalf("Failed to ack message: %v", err)
 					return
 				}
 			case NackRequeue:
-				if err := m.Nack(false, true); err != nil {
+				if err := msg.Nack(false, true); err != nil {
 					log.Fatalf("Failed to nack message: %v", err)
 					return
 				}
 			case NackDiscard:
-				if err := m.Nack(true, false); err != nil {
+				if err := msg.Nack(false, false); err != nil {
+					log.Fatalf("Failed to nack message: %v", err)
+					return
+				}
+			default:
+				if err := msg.Nack(false, false); err != nil {
 					log.Fatalf("Failed to nack message: %v", err)
 					return
 				}
 			}
 		}
-	}()
+	}(ch, msgs)
 	return nil
 }
 
